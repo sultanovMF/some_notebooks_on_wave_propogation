@@ -129,8 +129,8 @@ micro = zeros(Nt)
           vxy += α[m] * (vx[i+m , j] - vx[i - m + 1, j])
         end     
         # update stresses
-        pxx[i, j] = pxx[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vxx )
-        pyy[i, j] = pyy[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vyy )
+        pxx[i, j] = pxx[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vxx / dx)
+        pyy[i, j] = pyy[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vyy / dy)
         pxy[i, j] = pxy[i, j] + dt  * ( μ * (vyx / dx + vxy / dy) )
     end
   end
