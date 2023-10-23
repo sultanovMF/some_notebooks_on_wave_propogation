@@ -1,7 +1,7 @@
 using Plots;
 using Base.Threads;
 using LoopVectorization;
-
+using ProgressBars;
 Threads.nthreads() = 8
 
 # wavefield clip
@@ -74,10 +74,10 @@ p2d = p2P - 2 * p2S
 σxy_y = 0
 σxz_z = 0
 
-println("Nt = ", Nt)
+fm = 40
 
 #ricker_wavelet(t) = 2. / (sqrt(3) * sigma * pi^0.25) * (1 - (t/sigma)^2) * exp(-t^2 / 2 / sigma^2)
-#ricker_wavelet(t) = (1. - 2 * pi^2 * fm^2 * t^2) * exp(-pi^2 * fm^2 * t^2)
+ricker_wavelet(t) = (1. - 2 * pi^2 * fm^2 * t^2) * exp(-pi^2 * fm^2 * t^2)
 
 xs = range(0, stop=Lx, length=Nx)
 ys = range(0, stop=Ly, length=Ny)
@@ -85,14 +85,7 @@ ys = range(0, stop=Ly, length=Ny)
 micro = zeros(Nt)
 # vx[Nx ÷ 2,  Ny ÷ 2] = 200
 
-@gif for n in 1:Nt
-  #println(n, "/", Nt)
-
-  # define Ricker wavelet
-  t = n * dt
-  tau = pi * (t - 1.5 * ts - tshift) / (1.5 * ts)
-  amp = (1.0 - 4.0 * tau * tau) * exp(-2.0 * tau * tau)
-
+@gif for n in ProgressBar(1:Nt)
   # update particle velocities 
   @tturbo for i in 2:Ny-2
     for j in 5:Nx-5   
@@ -102,10 +95,10 @@ micro = zeros(Nt)
         pxy_y = 0     
 
         for m in 1:M
-          pxx_x += α[m] * (pxx[i, j + m] - pxx[i, j - m + 1])
-          pyy_y += α[m] * (pyy[i + m, j] - pyy[i - m + 1, j])
-          pxy_x += α[m] * (pxy[i, j + m - 1] - pxy[i, j-m])
-          pxy_y += α[m] * (pxy[i, j + m - 1] - pxy[i - m, j]) 
+          pxx_x += α[m] * (pxx[i + m, j] - pxx[i- m + 1, j ])
+          pyy_y += α[m] * (pyy[i, j + m] - pyy[i , j- m + 1])
+          pxy_x += α[m] * (pxy[i + m - 1, j] - pxy[i-m, j])
+          pxy_y += α[m] * (pxy[i, j + m - 1] - pxy[i , j- m]) 
         end       
   
         vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / dx + pxy_y / dy)
@@ -113,7 +106,8 @@ micro = zeros(Nt)
     end 
   end 
 
-  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + amp    
+  # add source wavelet
+  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + ricker_wavelet(n * dt - 0.1)  
 
   # update stresses
   @tturbo for i in 5:Ny-5
@@ -124,10 +118,10 @@ micro = zeros(Nt)
         vxy = 0
 
         for m in 1:M
-          vxx += α[m] * (vx[i, j + m - 1] - vx[i, j-m])
-          vyy += α[m] * (vy[i, j + m - 1] - vy[i-m, j])  
-          vyx += α[m] * (vy[i, j+m] - vy[i, j - m + 1])
-          vxy += α[m] * (vx[i+m , j] - vx[i - m + 1, j])
+          vxx += α[m] * (vx[i+ m - 1, j ] - vx[i-m, j])
+          vyy += α[m] * (vy[i, j+ m - 1 ] - vy[i, j-m])  
+          vyx += α[m] * (vy[i+m, j] - vy[i- m + 1, j ])
+          vxy += α[m] * (vx[i , j+m] - vx[i , j- m + 1])
         end    
 
         pxx[i, j] = pxx[i, j] + dt  * (  p1P * vxx / dx + p1d * vyy / dy + 0.5 * rxx[i, j])
@@ -146,25 +140,25 @@ micro = zeros(Nt)
 
         for m in 1:M
           vxx += α[m] * (vx[i + m - 1, j] - vx[i-m, j])
-          vyy += α[m] * (vy[i+ m - 1, j] - vy[i, j-m])  
-          vyx += α[m] * (vy[i+m, j] - vy[i- m + 1, j ])
-          vxy += α[m] * (vx[i , j+m] - vx[i , j- m + 1])
+          vyy += α[m] * (vy[i, j + m - 1] - vy[i, j-m])  
+          vyx += α[m] * (vy[i+m, j] - vy[i - m + 1, j ])
+          vxy += α[m] * (vx[i , j+m] - vx[i , j - m + 1])
         end    
          
         # update stresses
-        rxx[i, j] = 1. / (tau + dt) * (- rxx[i, j] - dt  * (  p2P * vxx / dx + p2d * vyy / dy + 0.5 * rxx[i, j]))
-        ryy[i, j] = 1. / (tau + dt) * (- ryy[i, j] - dt  * (  p2d * vxx / dx + p2P * vyy / dy + 0.5 * ryy[i, j]))
-        rxy[i, j] = 1. / (tau + dt) * (- rxy[i, j] - dt  * (  p2S * vyx / dx + p2S * vxy / dy + 0.5 * rxy[i, j]))
+        rxx[i, j] = - 1. / (τ + dt) * (rxx[i, j] + dt  * (  p2P * vxx / dx + p2d * vyy / dy + 0.5 * rxx[i, j]))
+        ryy[i, j] = - 1. / (τ + dt) * (ryy[i, j] + dt  * (  p2d * vxx / dx + p2P * vyy / dy + 0.5 * ryy[i, j]))
+        rxy[i, j] = - 1. / (τ + dt) * (rxy[i, j] + dt  * (  p2S * vyx / dx + p2S * vxy / dy + 0.5 * rxy[i, j]))
 
-        pxx[i, j] += 0.5 * rxx[i, j]
-        pyy[i, j] += 0.5 * ryy[i, j]
-        pxy[i, j] += 0.5 * rxy[i, j]
+        pxx[i, j] += 0.5 * dt * rxx[i, j]
+        pyy[i, j] += 0.5 * dt * ryy[i, j]
+        pxy[i, j] += 0.5 * dt * rxy[i, j]
     end
   end
 
   heatmap(vy[:, :],framestyle = :box, clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
-
+  micro[n] = vx[Nx ÷ 2, Ny ÷ 2]
 end every 10
 
 
-
+#plot(micro)
