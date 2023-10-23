@@ -92,9 +92,10 @@ micro = zeros(Nt)
   t = n * dt
   tau = pi * (t - 1.5 * ts - tshift) / (1.5 * ts)
   amp = (1.0 - 4.0 * tau * tau) * exp(-2.0 * tau * tau)
+
+  # update particle velocities 
   @tturbo for i in 2:Ny-2
-    for j in 5:Nx-5
-        # calculate spatial derivatives    
+    for j in 5:Nx-5   
         pxx_x = 0
         pyy_y = 0
         pxy_x = 0
@@ -106,8 +107,7 @@ micro = zeros(Nt)
           pxy_x += α[m] * (pxy[i, j + m - 1] - pxy[i, j-m])
           pxy_y += α[m] * (pxy[i, j + m - 1] - pxy[i - m, j]) 
         end       
-    
-        # update particle velocities 
+  
         vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / dx + pxy_y / dy)
         vy[i, j] = vy[i, j] + dt / ρ * (pxy_x / dx + pyy_y / dy)
     end 
@@ -115,27 +115,55 @@ micro = zeros(Nt)
 
   vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + amp    
 
+  # update stresses
   @tturbo for i in 5:Ny-5
     for j in 5:Nx-5
-        # calculate spatial derivatives
         vxx = 0
         vyy = 0        
         vyx = 0
         vxy = 0
+
         for m in 1:M
           vxx += α[m] * (vx[i, j + m - 1] - vx[i, j-m])
           vyy += α[m] * (vy[i, j + m - 1] - vy[i-m, j])  
           vyx += α[m] * (vy[i, j+m] - vy[i, j - m + 1])
           vxy += α[m] * (vx[i+m , j] - vx[i - m + 1, j])
-        end     
+        end    
+
+        pxx[i, j] = pxx[i, j] + dt  * (  p1P * vxx / dx + p1d * vyy / dy + 0.5 * rxx[i, j])
+        pyy[i, j] = pyy[i, j] + dt  * (  p1d * vxx / dx + p1P * vyy / dy + 0.5 * ryy[i, j])
+        pxy[i, j] = pxy[i, j] + dt  * (  p1S * vyx / dx + p1S * vxy / dy + 0.5 * rxy[i, j])
+    end
+  end
+
+  # update memory variables
+  @tturbo for i in 5:Ny-5
+    for j in 5:Nx-5
+        vxx = 0
+        vyy = 0        
+        vyx = 0
+        vxy = 0
+
+        for m in 1:M
+          vxx += α[m] * (vx[i, j + m - 1] - vx[i, j-m])
+          vyy += α[m] * (vy[i, j + m - 1] - vy[i-m, j])  
+          vyx += α[m] * (vy[i, j+m] - vy[i, j - m + 1])
+          vxy += α[m] * (vx[i+m , j] - vx[i - m + 1, j])
+        end    
+         
         # update stresses
-        pxx[i, j] = pxx[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vxx / dx)
-        pyy[i, j] = pyy[i, j] + dt  * ( λ * (vxx / dx + vyy / dy) + 2.0 * μ * vyy / dy)
-        pxy[i, j] = pxy[i, j] + dt  * ( μ * (vyx / dx + vxy / dy) )
+        rxx[i, j] = 1. / (tau + dt) * (- rxx[i, j] - dt  * (  p2P * vxx / dx + p2d * vyy / dy + 0.5 * rxx[i, j]))
+        ryy[i, j] = 1. / (tau + dt) * (- ryy[i, j] - dt  * (  p2d * vxx / dx + p2P * vyy / dy + 0.5 * ryy[i, j]))
+        rxy[i, j] = 1. / (tau + dt) * (- rxy[i, j] - dt  * (  p2S * vyx / dx + p2S * vxy / dy + 0.5 * rxy[i, j]))
+
+        pxx[i, j] += 0.5 * rxx[i, j]
+        pyy[i, j] += 0.5 * ryy[i, j]
+        pxy[i, j] += 0.5 * rxy[i, j]
     end
   end
 
   heatmap(vy[:, :], clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic)
+
 end every 10
 
 
