@@ -4,7 +4,8 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-
+from scipy.linalg import solve_banded
+from scipy.sparse import csr_matrix
 from numba import jit, njit
 
 lamb = 20000 # Pa
@@ -17,8 +18,8 @@ tau = 10
 Lx = 10 #meter
 Ly = 10 #meter
 
-Nx = 1000
-Ny = 1000
+Nx = 100
+Ny = 100
 
 Nt = 200
 T = 0.2
@@ -27,7 +28,7 @@ dt = T / Nt
 dx = Lx / Nx
 dy = Ly / Ny
 
-micro_coord = (Nx // 2,   Ny // 2 - 20)
+micro_coord = (Nx // 2,  Ny // 2)
 source_coord = (Nx // 2, Ny // 2)
 alpha = np.sqrt((lamb + 2 * mu) / rho)
 
@@ -35,11 +36,47 @@ stability_cryteria = np.max([dx, dy]) / (np.sqrt(alpha * (27/24 - 1/24)))
 assert dt < stability_cryteria, f"Нет устойчивости! {dt} < {stability_cryteria}"
 
 
-snap_freq = 1
+snap_freq = 10
 fM = 40 # Herz
+
+@njit(fastmath = True)
+def TDMA(a,b,c,d):
+  n = len(d)
+  x = np.empty(n)
+  w = np.empty(n)
+  bc = np.empty(n)
+  dc = np.empty(n)
+  bc[0] = b[0]
+  dc[0] = d[0]
+  for i in range(1,n):
+    w[i] = a[i-1]/bc[i-1]
+    bc[i] = b[i] - w[i]*c[i-1]
+    dc[i] = d[i] - w[i]*dc[i-1]
+
+  x[n-1] = dc[n-1]/bc[n-1]
+  for k in range(n-2,-1,-1):
+    x[k] = (dc[k]-c[k]*x[k+1])/bc[k]
+  return x
+
 
 @njit(parallel=True, fastmath = True)
 def run():
+  a0 = 1
+  a1 = 1/10
+  b0 = -12/(5)
+  b1 = 6/(5)
+
+  # Ax = a0*np.eye(Nx)+a1*np.eye(Nx,k=1)+a1*np.eye(Nx,k=-1)
+  Bx = b0*np.eye(Nx)+b1*np.eye(Nx,k=1)+b1*np.eye(Nx,k=-1)
+
+  # Ay = a0*np.eye(Ny)+a1*np.eye(Ny,k=1)+a1*np.eye(Ny,k=-1)
+  By = b0*np.eye(Ny)+b1*np.eye(Ny,k=1)+b1*np.eye(Ny,k=-1)
+
+  a0x = a0*np.ones(Nx)
+  a1x = a1*np.ones(Nx)
+
+  a0y = a0*np.ones(Ny)
+  a1y = a1*np.ones(Ny)
 
   vx = np.zeros((Nx, Ny))
   vy = np.zeros((Nx, Ny))
@@ -51,7 +88,6 @@ def run():
   rxx = np.zeros((Nx, Ny))
   ryy = np.zeros((Nx, Ny))
   rxy = np.zeros((Nx, Ny))
-
 
   # 1 / dx * (27/24 * () - 1 / 24 * ())
   p1P = (lamb + 2 * mu) * (1 + tau_p)
@@ -81,12 +117,14 @@ def run():
     # update velocities
     for i in range(5, Nx - 4):
       for j in range(5, Ny - 4):
-        pxx_x = 1 / dx * (27/24 * (pxx[i + 1, j] - pxx[i, j]) - 1 / 24 * (pxx[i + 2, j] - pxx[i - 1, j]))
-        pxy_y = 1 / dy * (27/24 * (pxy[i, j] - pxy[i, j - 1]) - 1 / 24 * (pxy[i, j + 1] - pxy[i, j - 2]))
+        pxx_x = 1 / dx**2 * TDMA(a1x,a0x,a1x,np.matmul(Bx, pxx[i, j]))
+        pxy_y = 1 / dy**2 * TDMA(a1y,a0y,a1y,np.matmul(By, pxy[i, j]))
+
         vx[i, j] = vx[i, j] + dt / rho * (pxx_x + pxy_y)
 
-        pyy_y = 1 / dy * (27/24 * (pyy[i, j + 1] - pyy[i, j]) - 1 / 24 * (pyy[i, j + 2] - pyy[i, j - 1]))
-        pxy_x = 1 / dx * (27/24 * (pxy[i, j] - pxy[i - 1, j]) - 1 / 24 * (pxy[i + 1, j] - pxy[i - 2, j]))
+        pyy_y = 1 / dy**2 * TDMA(a1y,a0y,a1y,np.matmul(By , pyy[i, j]))
+        pxy_x = 1 / dx**2 * TDMA(a1x,a0x,a1x,np.matmul(Bx , pxy[i, j]))
+       
         vy[i, j] = vy[i, j] + dt / rho * (pxy_x + pyy_y)
     
     #vx[*source_coord] += dt * np.sin(0.15 * n * dt)
@@ -98,14 +136,14 @@ def run():
     # update stress
     for i in range(5, Nx - 4):
       for j in range(5, Ny - 4):
-        vx_x = 1 / dx * (27/24 * (vx[i, j] - vx[i - 1, j]) - 1 / 24 * (vx[i + 1, j] - vx[i - 2, j]))
-        vy_y = 1 / dy * (27/24 * (vy[i, j] - vy[i, j - 1]) - 1 / 24 * (vy[i, j + 1] - vy[i, j - 2]))
+        vx_x = 1 / dx**2 * TDMA(a1x,a0x,a1x,np.matmul(Bx , vx[i, j]))
+        vy_y = 1 / dy**2 * TDMA(a1y,a0y,a1y,np.matmul(By , vy[i, j]))
 
         pxx[i, j] = pxx[i, j] + dt * (p1P * vx_x + p1d * vy_y) # + 0.5 * rxx[i, j]  # добавим вторую половинку с нового слоя позже
         pyy[i, j] = pyy[i, j] + dt * (p1d * vx_x + p1P * vy_y) # + 0.5 * ryy[i, j]  # добавим вторую половинку с нового слоя позже
 
-        vx_y = 1 / dy * (27/24 * (vx[i, j + 1] - vx[i, j]) - 1 / 24 * (vx[i, j + 2] - vx[i, j - 1]))
-        vy_x = 1 / dx * (27/24 * (vy[i + 1, j] - vy[i, j]) - 1 / 24 * (vy[i + 2, j] - vy[i - 1, j]))
+        vx_y = 1 / dy**2 * TDMA(a1y,a0y,a1y,np.matmul(By, vx[i, j]))
+        vy_x = 1 / dx**2 * TDMA(a1x,a0x,a1x,np.matmul(Bx , vy[i, j]))
 
         pxy[i, j] = pxy[i, j] + dt * (p1S * vx_y + p1S * vy_x)  #+ 0.5 * rxy[i, j] # добавим вторую половинку с нового слоя позже
 
