@@ -86,7 +86,7 @@ micro = zeros(Nt)
 # vx[Nx ÷ 2,  Ny ÷ 2] = 200
 
 @gif for n in 1:Nt
-  println(n, "/", Nt)
+  #println(n, "/", Nt)
 
   # define Ricker wavelet
   t = n * dt
@@ -145,10 +145,10 @@ micro = zeros(Nt)
         vxy = 0
 
         for m in 1:M
-          vxx += α[m] * (vx[i, j + m - 1] - vx[i, j-m])
-          vyy += α[m] * (vy[i, j + m - 1] - vy[i-m, j])  
-          vyx += α[m] * (vy[i, j+m] - vy[i, j - m + 1])
-          vxy += α[m] * (vx[i+m , j] - vx[i - m + 1, j])
+          vxx += α[m] * (vx[i + m - 1, j] - vx[i-m, j])
+          vyy += α[m] * (vy[i+ m - 1, j] - vy[i, j-m])  
+          vyx += α[m] * (vy[i+m, j] - vy[i- m + 1, j ])
+          vxy += α[m] * (vx[i , j+m] - vx[i , j- m + 1])
         end    
          
         # update stresses
@@ -162,7 +162,7 @@ micro = zeros(Nt)
     end
   end
 
-  heatmap(vy[:, :], clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic)
+  heatmap(vy[:, :],framestyle = :box, clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
 
 end every 10
 
