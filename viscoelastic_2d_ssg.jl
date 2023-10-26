@@ -2,6 +2,7 @@ using Plots;
 using Base.Threads;
 using LoopVectorization;
 using ProgressBars;
+
 Threads.nthreads() = 8
 
 # wavefield clip
@@ -33,7 +34,7 @@ dx = Lx / Nx # m
 dy = Ly / Ny # m
 
 # Настройки временной сетки
-T  = 0.55 # sec
+T  = 1 # sec
 dt = 0.6e-3
 Nt = trunc(Int, T / dt)
 # Nt = 1000
@@ -57,7 +58,6 @@ pxx = zeros(Nx, Ny)
 pyy = zeros(Nx, Ny)
 pxy = zeros(Nx, Ny)
 
-
 rxx = zeros(Nx, Ny)
 ryy = zeros(Nx, Ny)
 rxy = zeros(Nx, Ny)
@@ -70,25 +70,101 @@ p2P = (λ + 2 * μ) * τP
 p2S = μ * τS
 p2d = p2P - 2 * p2S
 
-σxx_x = 0
-σxy_y = 0
-σxz_z = 0
+fm = 40 # for ricker wavelet
 
-fm = 40
-
-#ricker_wavelet(t) = 2. / (sqrt(3) * sigma * pi^0.25) * (1 - (t/sigma)^2) * exp(-t^2 / 2 / sigma^2)
 ricker_wavelet(t) = (1. - 2 * pi^2 * fm^2 * t^2) * exp(-pi^2 * fm^2 * t^2)
 
-xs = range(0, stop=Lx, length=Nx)
-ys = range(0, stop=Ly, length=Ny)
+micro_coord = [Nx ÷ 2, Ny ÷ 2]
+micro_data = zeros(Nt)
 
-micro = zeros(Nt)
-# vx[Nx ÷ 2,  Ny ÷ 2] = 200
+# PML настрйока
+Npml = 10 # толщина PML слоя
+
+Npml_y_start = M + 1
+Npml_y_end = Ny - M
+
+Nx_start = M + Npml + 1
+Nx_end = Nx - M - Npml
+
+Ny_start = M + Npml + 1
+Ny_end = Ny - M - Npml
+
+
+# Perfectly matched layer
+
+κmax = 1
+
+Rc = 0.1 / 100 #процент теоретического отражения
+d0 = - 3 * vp * log(Rc) / 2 / Npml
+
+bx = ones(Nx)
+ax = ones(Nx)
+κx = ones(Nx)
+
+by = ones(Ny)
+ay = ones(Ny)
+κy = ones(Ny)
+
+αmax = pi * 25
+
+PML_RIGHT_EDGE = true
+PML_LEFT_EDGE = true
+PML_TOP_EDGE = true
+PML_BOTTOM_EDGE = true
+
+
+for p in 1:Npml
+  d = d0 * ((p - 1) / (Npml - 1))^2
+  α = αmax - αmax * (p - 1) / (Npml - 1)
+
+  if PML_RIGHT_EDGE
+    i = Nx - M - Npml + p
+
+    κx[i] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    bx[i] = exp(-(d / κx[p] + α) * dt) 
+    ax[i] = d / (κx[p] * (d + κx[p] * α)) * (bx[p] - 1)
+  end
+
+  if PML_LEFT_EDGE
+    i = M + Npml + 1 - p
+
+    κx[i] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    bx[i] = exp(-(d / κ[p] + α) * dt) 
+    ax[i] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+  end
+
+  if PML_TOP_EDGE
+    j = Ny - M - Npml + p
+
+    κy[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    by[j] = exp(-(d / κ[p] + α) * dt) 
+    ay[j] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+  end
+
+  if PML_Bottom_EDGE
+    j = M + Npml + 1 - p
+
+    κx[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    bx[j] = exp(-(d / κ[p] + α) * dt) 
+    ax[j] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+  end
+end
+
+
+ψx_pxx  = zeros(Nx, Ny)
+ψx_pxy  = zeros(Nx, Ny)
+ψx_vx   = zeros(Nx, Ny)
+ψx_vy   = zeros(Nx, Ny)
+
+ψy_pxy  = zeros(Nx, Ny)
+ψy_pyy  = zeros(Nx, Ny)
+ψy_vy   = zeros(Nx, Ny)
+ψy_vx   = zeros(Nx, Ny)
 
 @gif for n in ProgressBar(1:Nt)
   # update particle velocities 
-  @tturbo for i in 2:Ny-2
-    for j in 5:Nx-5   
+  @tturbo for i in Nx_start:Nx_end
+    for j in Ny_start:Ny_end
         pxx_x = 0
         pyy_y = 0
         pxy_x = 0
@@ -100,7 +176,7 @@ micro = zeros(Nt)
           pxy_x += α[m] * (pxy[i + m - 1, j] - pxy[i-m, j])
           pxy_y += α[m] * (pxy[i, j + m - 1] - pxy[i , j- m]) 
         end       
-  
+        
         vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / dx + pxy_y / dy)
         vy[i, j] = vy[i, j] + dt / ρ * (pxy_x / dx + pyy_y / dy)
     end 
@@ -110,8 +186,8 @@ micro = zeros(Nt)
   vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + ricker_wavelet(n * dt - 0.1)  
 
   # update stresses
-  @tturbo for i in 5:Ny-5
-    for j in 5:Nx-5
+  @tturbo for i in Nx_start:Nx_end
+    for j in Ny_start:Ny_end
         vxx = 0
         vyy = 0        
         vyx = 0
@@ -131,8 +207,8 @@ micro = zeros(Nt)
   end
 
   # update memory variables
-  @tturbo for i in 5:Ny-5
-    for j in 5:Nx-5
+  @tturbo for i in Nx_start:Nx_end
+    for j in Ny_start:Ny_end
         vxx = 0
         vyy = 0        
         vyx = 0
@@ -156,8 +232,14 @@ micro = zeros(Nt)
     end
   end
 
+  
+
+
+
+
   heatmap(vy[:, :],framestyle = :box, clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
-  micro[n] = vx[Nx ÷ 2, Ny ÷ 2]
+  
+  # micro_data[n] = vx[Nx ÷ 2, Ny ÷ 2]
 end every 10
 
 

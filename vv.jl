@@ -1,11 +1,10 @@
-using Base.Threads;
-using BenchmarkTools;
+computing_area = ((i, j) for i in 1:5 for j in 1:5)
 
-N = 100
-a = zeros(N)
 
-@threads for i = 1:N
-  a[i] = i
+for (i, j) in computing_area
+  println(i, ' ', j)
 end
-
-print(a)
+println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+for (i, j) in computing_area
+  println(i, ' ', j)
+end
