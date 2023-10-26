@@ -49,7 +49,7 @@ ts = 1.0 / fc
 # α = [1.221336364746061, -0.0969314575195135, 0.017447662353510373, -0.0029672895159030804, 0.00035900539822037244, -2.1847811612209015e-5] # spacial finite difference coefficient
 
 M = 2
-α = [1.125 -0.041666666666666664]
+fd_coef = [1.125 -0.041666666666666664]
 
 vx = zeros(Nx, Ny)
 vy = zeros(Nx, Ny)
@@ -80,14 +80,11 @@ micro_data = zeros(Nt)
 # PML настрйока
 Npml = 10 # толщина PML слоя
 
-Npml_y_start = M + 1
-Npml_y_end = Ny - M
+Nx_start = M  + 1
+Nx_end = Nx - M
 
-Nx_start = M + Npml + 1
-Nx_end = Nx - M - Npml
-
-Ny_start = M + Npml + 1
-Ny_end = Ny - M - Npml
+Ny_start = M + 1
+Ny_end = Ny - M
 
 
 # Perfectly matched layer
@@ -97,12 +94,12 @@ Ny_end = Ny - M - Npml
 Rc = 0.1 / 100 #процент теоретического отражения
 d0 = - 3 * vp * log(Rc) / 2 / Npml
 
-bx = ones(Nx)
-ax = ones(Nx)
+bx = zeros(Nx)
+ax = zeros(Nx)
 κx = ones(Nx)
 
-by = ones(Ny)
-ay = ones(Ny)
+by = zeros(Ny)
+ay = zeros(Ny)
 κy = ones(Ny)
 
 αmax = pi * 25
@@ -126,65 +123,74 @@ for p in 1:Npml
   end
 
   if PML_LEFT_EDGE
-    i = M + Npml + 1 - p
-
+    local i = M + Npml + 1 - p
+    
     κx[i] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
-    bx[i] = exp(-(d / κ[p] + α) * dt) 
-    ax[i] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+    bx[i] = exp(-(d / κx[p] + α) * dt) 
+    ax[i] = d / (κx[p] * (d + κx[p] * α)) * (bx[p] - 1)
   end
 
   if PML_TOP_EDGE
-    j = Ny - M - Npml + p
+    local j = Ny - M - Npml + p
 
     κy[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
-    by[j] = exp(-(d / κ[p] + α) * dt) 
-    ay[j] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+    by[j] = exp(-(d / κy[p] + α) * dt) 
+    ay[j] = d / (κy[p] * (d + κy[p] * α)) * (by[p] - 1)
   end
 
-  if PML_Bottom_EDGE
-    j = M + Npml + 1 - p
+  if PML_BOTTOM_EDGE
+    local j = M + Npml + 1 - p
 
-    κx[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
-    bx[j] = exp(-(d / κ[p] + α) * dt) 
-    ax[j] = d / (κ[p] * (d + κ[p] * α)) * (b[p] - 1)
+    κy[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    by[j] = exp(-(d / κy[p] + α) * dt) 
+    ay[j] = d / (κy[p] * (d + κy[p] * α)) * (by[p] - 1)
   end
 end
 
+# для интерполяции в промежуточных значениях
+if PML_RIGHT_EDGE
+  local i = Nx - M + 1
 
-ψx_pxx  = zeros(Nx, Ny)
-ψx_pxy  = zeros(Nx, Ny)
-ψx_vx   = zeros(Nx, Ny)
-ψx_vy   = zeros(Nx, Ny)
+  κx[i] = κx[i - 1]
+  bx[i] = bx[i - 1]
+  ax[i] = ax[i - 1]
+end
 
-ψy_pxy  = zeros(Nx, Ny)
-ψy_pyy  = zeros(Nx, Ny)
-ψy_vy   = zeros(Nx, Ny)
-ψy_vx   = zeros(Nx, Ny)
+if PML_LEFT_EDGE
+  local i = M + Npml + 1
+
+  κx[i] = κx[i - 1]
+  bx[i] = bx[i - 1]
+  ax[i] = ax[i - 1]
+end
+
+if PML_TOP_EDGE
+  local j = Ny - M + 1
+
+  κy[j] = κy[j - 1]
+  by[j] = by[j - 1]
+  ay[j] = ay[j - 1]
+end
+
+if PML_BOTTOM_EDGE
+  local j = M + Npml + 1
+
+  κy[j] = κy[j - 1]
+  by[j] = by[j - 1]
+  ay[j] = ay[j - 1]
+end
+
+ψx_pxx   = zeros(Nx, Ny)
+ψx_pxy   = zeros(Nx, Ny)
+ψx_vxx   = zeros(Nx, Ny)
+ψx_vyx   = zeros(Nx, Ny)
+
+ψy_pxy   = zeros(Nx, Ny)
+ψy_pyy   = zeros(Nx, Ny)
+ψy_vyy   = zeros(Nx, Ny)
+ψy_vxy   = zeros(Nx, Ny)
 
 @gif for n in ProgressBar(1:Nt)
-  # update particle velocities 
-  @tturbo for i in Nx_start:Nx_end
-    for j in Ny_start:Ny_end
-        pxx_x = 0
-        pyy_y = 0
-        pxy_x = 0
-        pxy_y = 0     
-
-        for m in 1:M
-          pxx_x += α[m] * (pxx[i + m, j] - pxx[i- m + 1, j ])
-          pyy_y += α[m] * (pyy[i, j + m] - pyy[i , j- m + 1])
-          pxy_x += α[m] * (pxy[i + m - 1, j] - pxy[i-m, j])
-          pxy_y += α[m] * (pxy[i, j + m - 1] - pxy[i , j- m]) 
-        end       
-        
-        vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / dx + pxy_y / dy)
-        vy[i, j] = vy[i, j] + dt / ρ * (pxy_x / dx + pyy_y / dy)
-    end 
-  end 
-
-  # add source wavelet
-  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + ricker_wavelet(n * dt - 0.1)  
-
   # update stresses
   @tturbo for i in Nx_start:Nx_end
     for j in Ny_start:Ny_end
@@ -194,37 +200,25 @@ end
         vxy = 0
 
         for m in 1:M
-          vxx += α[m] * (vx[i+ m - 1, j ] - vx[i-m, j])
-          vyy += α[m] * (vy[i, j+ m - 1 ] - vy[i, j-m])  
-          vyx += α[m] * (vy[i+m, j] - vy[i- m + 1, j ])
-          vxy += α[m] * (vx[i , j+m] - vx[i , j- m + 1])
+          vxx += fd_coef[m] * (vx[i + m - 1, j ] - vx[i-m, j]) / dx
+          vyy += fd_coef[m] * (vy[i, j + m - 1 ] - vy[i, j-m]) / dy
+          vyx += fd_coef[m] * (vy[i+m, j] - vy[i- m + 1, j ]) /dx
+          vxy += fd_coef[m] * (vx[i , j+m] - vx[i , j- m + 1]) /dy
         end    
 
-        pxx[i, j] = pxx[i, j] + dt  * (  p1P * vxx / dx + p1d * vyy / dy + 0.5 * rxx[i, j])
-        pyy[i, j] = pyy[i, j] + dt  * (  p1d * vxx / dx + p1P * vyy / dy + 0.5 * ryy[i, j])
-        pxy[i, j] = pxy[i, j] + dt  * (  p1S * vyx / dx + p1S * vxy / dy + 0.5 * rxy[i, j])
-    end
-  end
+        ψx_vxx[i, j] = bx[i] * ψx_vxx[i, j] + ax[i] * vxx
+        ψy_vyy[i, j] = by[j] * ψy_vyy[i, j] + ay[j] * vyy
 
-  # update memory variables
-  @tturbo for i in Nx_start:Nx_end
-    for j in Ny_start:Ny_end
-        vxx = 0
-        vyy = 0        
-        vyx = 0
-        vxy = 0
+        ψx_vyx[i, j] = (bx[i] + bx[i+1]) / 2 * ψx_vyx[i, j] + (ax[i] + ax[i + 1]) / 2 * vyx
+        ψy_vxy[i, j] = (by[j] + by[j+1]) / 2 * ψy_vxy[i, j] + (ay[j] + ay[j + 1]) / 2 * vxy
 
-        for m in 1:M
-          vxx += α[m] * (vx[i + m - 1, j] - vx[i-m, j])
-          vyy += α[m] * (vy[i, j + m - 1] - vy[i, j-m])  
-          vyx += α[m] * (vy[i+m, j] - vy[i - m + 1, j ])
-          vxy += α[m] * (vx[i , j+m] - vx[i , j - m + 1])
-        end    
-         
-        # update stresses
-        rxx[i, j] = - 1. / (τ + dt) * (rxx[i, j] + dt  * (  p2P * vxx / dx + p2d * vyy / dy + 0.5 * rxx[i, j]))
-        ryy[i, j] = - 1. / (τ + dt) * (ryy[i, j] + dt  * (  p2d * vxx / dx + p2P * vyy / dy + 0.5 * ryy[i, j]))
-        rxy[i, j] = - 1. / (τ + dt) * (rxy[i, j] + dt  * (  p2S * vyx / dx + p2S * vxy / dy + 0.5 * rxy[i, j]))
+        pxx[i, j] = pxx[i, j] + dt  * (p1P * (vxx / κx[i] +  ψx_vxx[i, j]) + p1d * (vyy / κy[j] + ψy_vyy[i, j]) + 0.5 * rxx[i, j])
+        pyy[i, j] = pyy[i, j] + dt  * (p1d * (vxx / κx[i] +  ψx_vxx[i, j]) + p1P * (vyy / κy[j] + ψy_vyy[i, j]) + 0.5 * ryy[i, j])
+        pxy[i, j] = pxy[i, j] + dt  * (p1S * (vyx / κx[i] +  ψx_vyx[i, j]) + p1S * (vxy / κy[j] + ψy_vxy[i, j]) + 0.5 * rxy[i, j])
+
+        rxx[i, j] = - 1. / (τ + dt) * (rxx[i, j] + dt  * (p2P * vxx + p2d * vyy + 0.5 * rxx[i, j]))
+        ryy[i, j] = - 1. / (τ + dt) * (ryy[i, j] + dt  * (p2d * vxx + p2P * vyy + 0.5 * ryy[i, j]))
+        rxy[i, j] = - 1. / (τ + dt) * (rxy[i, j] + dt  * (p2S * vyx + p2S * vxy + 0.5 * rxy[i, j]))
 
         pxx[i, j] += 0.5 * dt * rxx[i, j]
         pyy[i, j] += 0.5 * dt * ryy[i, j]
@@ -232,10 +226,33 @@ end
     end
   end
 
-  
+  # update particle velocities 
+  @tturbo for i in Nx_start:Nx_end
+    for j in Ny_start:Ny_end
+        pxx_x = 0
+        pyy_y = 0
+        pxy_x = 0
+        pxy_y = 0     
 
+        for m in 1:M
+          pxx_x += fd_coef[m] * (pxx[i + m, j] - pxx[i- m + 1, j ]) / dx
+          pyy_y += fd_coef[m] * (pyy[i, j + m] - pyy[i , j- m + 1]) / dy
+          pxy_x += fd_coef[m] * (pxy[i + m - 1, j] - pxy[i-m, j]) / dx
+          pxy_y += fd_coef[m] * (pxy[i, j + m - 1] - pxy[i , j- m]) /dy
+        end       
 
+        ψx_pxx[i, j] = (bx[i] + bx[i+1]) / 2 * ψx_pxx[i, j] + (ax[i] + ax[i]) / 2 * pxx_x
+        ψy_pxy[i, j] = by[j] * ψy_pxy[i, j] + ay[j] * pxy_y
+        vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / κx[i] + ψx_pxx[i, j] + pxy_y / κy[j] + ψy_pxy[i, j])
 
+        ψx_pxy[i, j] = bx[i] * ψx_pxy[i, j] + ax[i] * pxy_x
+        ψy_pyy[i, j] = (by[j] + by[j + 1]) / 2 * ψy_pyy[i, j] + (ay[j] + ay[j+1]) / 2 * pyy_y
+        vy[i, j] = vy[i, j] + dt / ρ * (pxy_x / κx[i] + ψx_pxy[i, j] + pyy_y / κy[j] + ψy_pyy[i, j])
+    end 
+  end 
+
+  # add source wavelet
+  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + ricker_wavelet(n * dt - 0.1)  
 
   heatmap(vy[:, :],framestyle = :box, clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
   
