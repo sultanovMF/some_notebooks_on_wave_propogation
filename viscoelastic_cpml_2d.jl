@@ -41,20 +41,31 @@ const t0 = 1.20 / f0
 const factor = 1.0
 
 # source
-const ISOURCE = NX - 2 * NPOINTS_PML - 1
-const JSOURCE = 2 * NY / 3 + 1
+const ISOURCE = trunc(Int, NX - 2 * NPOINTS_PML - 1)
+const JSOURCE = trunc(Int, 2 * NY / 3 + 1)
 
 const xsource = (ISOURCE - 1) * DELTAX
 const ysource = (JSOURCE - 1) * DELTAY
 
 # angle of source force in degrees and clockwise, with respect to the vertical (Y) axis
 const ANGLE_FORCE = 135.0
-
+const DEGREES_TO_RADIANS = pi / 180
 # power to compute d0 profile
 NPOWER = 2
 
 K_MAX_PML = 1 # from Stephen Gedney's unpublished class notes for class EE699, lecture 8, slide 8-11
 ALPHA_MAX_PML =  2.0*pi*(f0/2.0) #  from Festa and Vilotte
+
+# main arrays
+vx = zeros(NX, NY)
+vy = zeros(NX, NY)
+sigma_xx = zeros(NX, NY)
+sigma_yy = zeros(NX, NY)
+sigma_xy = zeros(NX, NY)
+lambda = zeros(NX, NY)
+mu = zeros(NX, NY)
+rho = zeros(NX, NY)
+
 
 # arrays for the memory variables
 # could declare these arrays in PML only to save a lot of memory, but proof of concept only here
@@ -123,13 +134,13 @@ Courant_number = cp * DELTAT * sqrt(1.0/DELTAX^2 + 1.0/DELTAY^2)
     end
 
     abscissa_in_PML = xoriginleft - (xval + DELTAX/2.0)
-      if (abscissa_in_PML >= 0)
-        abscissa_normalized = abscissa_in_PML / thickness_PML_x
-        d_x_half[i] = d0_x * abscissa_normalized^NPOWER
+    if (abscissa_in_PML >= 0)
+      abscissa_normalized = abscissa_in_PML / thickness_PML_x
+      d_x_half[i] = d0_x * abscissa_normalized^NPOWER
 
-        K_x_half[i] = 1.0 + (K_MAX_PML - 1.0) * abscissa_normalized^NPOWER
-        alpha_x_half[i] = ALPHA_MAX_PML * (1.0 - abscissa_normalized)
-      end
+      K_x_half[i] = 1.0 + (K_MAX_PML - 1.0) * abscissa_normalized^NPOWER
+      alpha_x_half[i] = ALPHA_MAX_PML * (1.0 - abscissa_normalized)
+    end
   end
 
   # right edge
@@ -153,13 +164,13 @@ Courant_number = cp * DELTAT * sqrt(1.0/DELTAX^2 + 1.0/DELTAY^2)
     end
   end
 
-  # just in case, for -5 at the end
-  if (alpha_x[i] < 0) 
-    alpha_x[i] = 0
-  end
-  if (alpha_x_half[i] < 0)
-    alpha_x_half[i] = 0
-  end
+  # # just in case, for -5 at the end
+  # if (alpha_x[i] < 0) 
+  #   alpha_x[i] = 0
+  # end
+  # if (alpha_x_half[i] < 0)
+  #   alpha_x_half[i] = 0
+  # end
 
   b_x[i] = exp(- (d_x[i] / K_x[i] + alpha_x[i]) * DELTAT)
   b_x_half[i] = exp(- (d_x_half[i] / K_x_half[i] + alpha_x_half[i]) * DELTAT)
@@ -249,50 +260,92 @@ end
       lambda[i,j] = density*(cp*cp - 2.0*cs*cs)
   end
 end
- 
-# main arrays
-vx = zeros(NX, NY)
-vy = zeros(NX, NY)
-sigma_xx = zeros(NX, NY)
-sigma_yy = zeros(NX, NY)
-sigma_xy = zeros(NX, NY)
-lambda = zeros(NX, NY)
-mu = zeros(NX, NY)
-rho = zeros(NX, NY)
 
-for n in ProgressBar(1:NSTEP)
-   @tturbo for i in 1:NX-2
-     for j in 2:NY
-      sigma_xx[i, j] = i + j
-#       # local lambda_half_x = 0.50 * (lambda[i+1,j] + lambda[i,j])
-#       # local mu_half_x = 0.50 * (mu[i+1,j] + mu[i,j])
-#       # local lambda_plus_two_mu_half_x = lambda_half_x + 2.0 * mu_half_x
+@gif for n in ProgressBar(1:NSTEP)
+  @tturbo for i in 1:NX-1
+    for j in 2:NY
+      lambda_half_x = 0.50 * (lambda[i+1,j] + lambda[i,j])
+      mu_half_x = 0.50 * (mu[i+1,j] + mu[i,j])
+      lambda_plus_two_mu_half_x = lambda_half_x + 2.0 * mu_half_x
 
-#       # local value_dvx_dx = (vx[i+1,j] - vx[i,j]) / DELTAX
-#       # local value_dvy_dy = (vy[i,j] - vy[i,j-1]) / DELTAY
+      value_dvx_dx = (vx[i+1,j] - vx[i,j]) / DELTAX
+      value_dvy_dy = (vy[i,j] - vy[i,j-1]) / DELTAY
 
-#       # memory_dvx_dx[i,j] = b_x_half[i] * memory_dvx_dx[i,j] + a_x_half[i] * value_dvx_dx
-#       # memory_dvy_dy[i,j] = b_y[j] * memory_dvy_dy[i,j] + a_y[j] * value_dvy_dy
+      memory_dvx_dx[i,j] = b_x_half[i] * memory_dvx_dx[i,j] + a_x_half[i] * value_dvx_dx
+      memory_dvy_dy[i,j] = b_y[j] * memory_dvy_dy[i,j] + a_y[j] * value_dvy_dy
 
-#       # local value_dvx_dx = value_dvx_dx / K_x_half[i] + memory_dvx_dx[i,j]
-#       # local value_dvy_dy = value_dvy_dy / K_y[j] + memory_dvy_dy[i,j]
+      value_dvx_dx = value_dvx_dx / K_x_half[i] + memory_dvx_dx[i,j]
+      value_dvy_dy = value_dvy_dy / K_y[j] + memory_dvy_dy[i,j]
 
-#       # sigma_xx[i,j] = sigma_xx[i,j] + (lambda_plus_two_mu_half_x * value_dvx_dx + lambda_half_x * value_dvy_dy) * DELTAT
+      sigma_xx[i,j] = sigma_xx[i,j] + (lambda_plus_two_mu_half_x * value_dvx_dx + lambda_half_x * value_dvy_dy) * DELTAT
 
-#       # sigma_yy[i,j] = sigma_yy[i,j] + (lambda_half_x * value_dvx_dx + lambda_plus_two_mu_half_x * value_dvy_dy) * DELTAT
+      sigma_yy[i,j] = sigma_yy[i,j] + (lambda_half_x * value_dvx_dx + lambda_plus_two_mu_half_x * value_dvy_dy) * DELTAT
 
-     end
-   end
+    end
+  end
 
-#   # @tturbo for i in 1:NX-1
-#   #   for j in 2:NY
+  @tturbo for i in 2:NX
+    for j in 1:NY-1
+      # interpolate material parameters at the right location in the staggered grid cell
+      mu_half_y = 0.5 * (mu[i,j+1] + mu[i,j])
 
-#   #   end
-#   # end
+      value_dvy_dx = (vy[i,j] - vy[i-1,j]) / DELTAX
+      value_dvx_dy = (vx[i,j+1] - vx[i,j]) / DELTAY
 
-#   # @tturbo for i in 1:NX-1
-#   #   for j in 2:NY
+      memory_dvy_dx[i,j] = b_x[i] * memory_dvy_dx[i,j] + a_x[i] * value_dvy_dx
+      memory_dvx_dy[i,j] = b_y_half[j] * memory_dvx_dy[i,j] + a_y_half[j] * value_dvx_dy
 
-#   #   end
-#   # end
-end
+      value_dvy_dx = value_dvy_dx / K_x[i] + memory_dvy_dx[i,j]
+      value_dvx_dy = value_dvx_dy / K_y_half[j] + memory_dvx_dy[i,j]
+
+      sigma_xy[i,j] = sigma_xy[i,j] + mu_half_y * (value_dvy_dx + value_dvx_dy) * DELTAT
+    end
+  end
+
+  # compute velocity and update memory variables for C-PML
+  @tturbo for i in 2:NX
+    for j in 2:NY
+      value_dsigma_xx_dx = (sigma_xx[i,j] - sigma_xx[i-1,j]) / DELTAX
+      value_dsigma_xy_dy = (sigma_xy[i,j] - sigma_xy[i,j-1]) / DELTAY
+
+      memory_dsigma_xx_dx[i,j] = b_x[i] * memory_dsigma_xx_dx[i,j] + a_x[i] * value_dsigma_xx_dx
+      memory_dsigma_xy_dy[i,j] = b_y[j] * memory_dsigma_xy_dy[i,j] + a_y[j] * value_dsigma_xy_dy
+
+      value_dsigma_xx_dx = value_dsigma_xx_dx / K_x[i] + memory_dsigma_xx_dx[i,j]
+      value_dsigma_xy_dy = value_dsigma_xy_dy / K_y[j] + memory_dsigma_xy_dy[i,j]
+
+      vx[i,j] = vx[i,j] + (value_dsigma_xx_dx + value_dsigma_xy_dy) * DELTAT / rho[i,j]
+    end
+  end
+
+  @tturbo for i in 1:NX-1
+    for j in 1:NY-1
+      rho_half_x_half_y = 0.25 * (rho[i,j] + rho[i+1,j] + rho[i+1,j+1] + rho[i,j+1])
+
+      value_dsigma_xy_dx = (sigma_xy[i+1,j] - sigma_xy[i,j]) / DELTAX
+      value_dsigma_yy_dy = (sigma_yy[i,j+1] - sigma_yy[i,j]) / DELTAY
+
+      memory_dsigma_xy_dx[i,j] = b_x_half[i] * memory_dsigma_xy_dx[i,j] + a_x_half[i] * value_dsigma_xy_dx
+      memory_dsigma_yy_dy[i,j] = b_y_half[j] * memory_dsigma_yy_dy[i,j] + a_y_half[j] * value_dsigma_yy_dy
+
+      value_dsigma_xy_dx = value_dsigma_xy_dx / K_x_half[i] + memory_dsigma_xy_dx[i,j]
+      value_dsigma_yy_dy = value_dsigma_yy_dy / K_y_half[j] + memory_dsigma_yy_dy[i,j]
+
+      vy[i,j] = vy[i,j] + (value_dsigma_xy_dx + value_dsigma_yy_dy) * DELTAT / rho_half_x_half_y
+    end
+  end
+
+  a = pi*pi*f0*f0
+  t = (n-1)*DELTAT
+  source_term = - factor * 2.0*a*(t-t0)*exp(-a*(t-t0)^2)
+
+  force_x = sin(ANGLE_FORCE * DEGREES_TO_RADIANS) * source_term
+  force_y = cos(ANGLE_FORCE * DEGREES_TO_RADIANS) * source_term
+
+  rho_half_x_half_y = 0.25 * (rho[ISOURCE,JSOURCE] + rho[ISOURCE + 1,JSOURCE] + rho[ISOURCE + 1,JSOURCE + 1] + rho[ISOURCE,JSOURCE + 1])
+
+  vx[ISOURCE,JSOURCE] = vx[ISOURCE,JSOURCE] + force_x * DELTAT / rho[ISOURCE,JSOURCE]
+  vy[ISOURCE,JSOURCE] = vy[ISOURCE,JSOURCE] + force_y * DELTAT / rho_half_x_half_y
+
+  heatmap(vx[:, :],framestyle = :box, aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
+end every 10
