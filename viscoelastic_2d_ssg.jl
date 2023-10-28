@@ -5,9 +5,6 @@ using ProgressBars;
 
 Threads.nthreads() = 8
 
-# wavefield clip
-clip = 2.5e-2
-
 # viscoelastic params
 τP = 0
 τS = 0
@@ -78,7 +75,7 @@ micro_coord = [Nx ÷ 2, Ny ÷ 2]
 micro_data = zeros(Nt)
 
 # PML настрйока
-Npml = 10 # толщина PML слоя
+Npml = 5 # толщина PML слоя
 
 Nx_start = M  + 1
 Nx_end = Nx - M
@@ -102,22 +99,23 @@ by = zeros(Ny)
 ay = zeros(Ny)
 κy = ones(Ny)
 
-αmax = pi * 25
+αmax = 0 #pi * 40
 
-PML_RIGHT_EDGE = true
-PML_LEFT_EDGE = true
+PML_RIGHT_EDGE = false
+PML_LEFT_EDGE = false
 PML_TOP_EDGE = true
 PML_BOTTOM_EDGE = true
 
+println(d0)
 
 for p in 1:Npml
-  d = d0 * ((p - 1) / (Npml - 1))^2
-  α = αmax - αmax * (p - 1) / (Npml - 1)
+  d = d0 * ((p) / (Npml))^2
+  local α = αmax - αmax * (p) / (Npml)
 
   if PML_RIGHT_EDGE
     i = Nx - M - Npml + p
 
-    κx[i] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    κx[i] = 1 + (κmax) * ((p) / (Npml))^2
     bx[i] = exp(-(d / κx[p] + α) * dt) 
     ax[i] = d / (κx[p] * (d + κx[p] * α)) * (bx[p] - 1)
   end
@@ -125,7 +123,7 @@ for p in 1:Npml
   if PML_LEFT_EDGE
     local i = M + Npml + 1 - p
     
-    κx[i] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    κx[i] = 1 + (κmax ) * ((p ) / (Npml ))^2
     bx[i] = exp(-(d / κx[p] + α) * dt) 
     ax[i] = d / (κx[p] * (d + κx[p] * α)) * (bx[p] - 1)
   end
@@ -133,7 +131,7 @@ for p in 1:Npml
   if PML_TOP_EDGE
     local j = Ny - M - Npml + p
 
-    κy[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    κy[j] = 1 + (κmax ) * ((p ) / (Npml ))^2
     by[j] = exp(-(d / κy[p] + α) * dt) 
     ay[j] = d / (κy[p] * (d + κy[p] * α)) * (by[p] - 1)
   end
@@ -141,44 +139,44 @@ for p in 1:Npml
   if PML_BOTTOM_EDGE
     local j = M + Npml + 1 - p
 
-    κy[j] = 1 + (κmax - 1) * ((p - 1) / (Npml - 1))^2
+    κy[j] = 1 + (κmax ) * ((p ) / (Npml ))^2
     by[j] = exp(-(d / κy[p] + α) * dt) 
     ay[j] = d / (κy[p] * (d + κy[p] * α)) * (by[p] - 1)
   end
 end
 
 # для интерполяции в промежуточных значениях
-if PML_RIGHT_EDGE
-  local i = Nx - M + 1
+# if PML_RIGHT_EDGE
+#   local i = Nx - M + 1
 
-  κx[i] = κx[i - 1]
-  bx[i] = bx[i - 1]
-  ax[i] = ax[i - 1]
-end
+#   κx[i] = κx[i - 1]
+#   bx[i] = bx[i - 1]
+#   ax[i] = ax[i - 1]
+# end
 
-if PML_LEFT_EDGE
-  local i = M + Npml + 1
+# if PML_LEFT_EDGE
+#   local i = M + Npml + 1
 
-  κx[i] = κx[i - 1]
-  bx[i] = bx[i - 1]
-  ax[i] = ax[i - 1]
-end
+#   κx[i] = κx[i - 1]
+#   bx[i] = bx[i - 1]
+#   ax[i] = ax[i - 1]
+# end
 
-if PML_TOP_EDGE
-  local j = Ny - M + 1
+# if PML_TOP_EDGE
+#   local j = Ny - M + 1
 
-  κy[j] = κy[j - 1]
-  by[j] = by[j - 1]
-  ay[j] = ay[j - 1]
-end
+#   κy[j] = κy[j - 1]
+#   by[j] = by[j - 1]
+#   ay[j] = ay[j - 1]
+# end
 
-if PML_BOTTOM_EDGE
-  local j = M + Npml + 1
+# if PML_BOTTOM_EDGE
+#   local j = M + Npml + 1
 
-  κy[j] = κy[j - 1]
-  by[j] = by[j - 1]
-  ay[j] = ay[j - 1]
-end
+#   κy[j] = κy[j - 1]
+#   by[j] = by[j - 1]
+#   ay[j] = ay[j - 1]
+# end
 
 ψx_pxx   = zeros(Nx, Ny)
 ψx_pxy   = zeros(Nx, Ny)
@@ -216,13 +214,13 @@ end
         pyy[i, j] = pyy[i, j] + dt  * (p1d * (vxx / κx[i] +  ψx_vxx[i, j]) + p1P * (vyy / κy[j] + ψy_vyy[i, j]) + 0.5 * ryy[i, j])
         pxy[i, j] = pxy[i, j] + dt  * (p1S * (vyx / κx[i] +  ψx_vyx[i, j]) + p1S * (vxy / κy[j] + ψy_vxy[i, j]) + 0.5 * rxy[i, j])
 
-        rxx[i, j] = - 1. / (τ + dt) * (rxx[i, j] + dt  * (p2P * vxx + p2d * vyy + 0.5 * rxx[i, j]))
-        ryy[i, j] = - 1. / (τ + dt) * (ryy[i, j] + dt  * (p2d * vxx + p2P * vyy + 0.5 * ryy[i, j]))
-        rxy[i, j] = - 1. / (τ + dt) * (rxy[i, j] + dt  * (p2S * vyx + p2S * vxy + 0.5 * rxy[i, j]))
+        # rxx[i, j] = - 1. / (τ + dt) * (rxx[i, j] + dt  * (p2P * vxx + p2d * vyy + 0.5 * rxx[i, j]))
+        # ryy[i, j] = - 1. / (τ + dt) * (ryy[i, j] + dt  * (p2d * vxx + p2P * vyy + 0.5 * ryy[i, j]))
+        # rxy[i, j] = - 1. / (τ + dt) * (rxy[i, j] + dt  * (p2S * vyx + p2S * vxy + 0.5 * rxy[i, j]))
 
-        pxx[i, j] += 0.5 * dt * rxx[i, j]
-        pyy[i, j] += 0.5 * dt * ryy[i, j]
-        pxy[i, j] += 0.5 * dt * rxy[i, j]
+        # pxx[i, j] += 0.5 * dt * rxx[i, j]
+        # pyy[i, j] += 0.5 * dt * ryy[i, j]
+        # pxy[i, j] += 0.5 * dt * rxy[i, j]
     end
   end
 
@@ -241,7 +239,7 @@ end
           pxy_y += fd_coef[m] * (pxy[i, j + m - 1] - pxy[i , j- m]) /dy
         end       
 
-        ψx_pxx[i, j] = (bx[i] + bx[i+1]) / 2 * ψx_pxx[i, j] + (ax[i] + ax[i]) / 2 * pxx_x
+        ψx_pxx[i, j] = (bx[i] + bx[i+1]) / 2 * ψx_pxx[i, j] + (ax[i] + ax[i + 1]) / 2 * pxx_x
         ψy_pxy[i, j] = by[j] * ψy_pxy[i, j] + ay[j] * pxy_y
         vx[i, j] = vx[i, j] + dt / ρ * (pxx_x / κx[i] + ψx_pxx[i, j] + pxy_y / κy[j] + ψy_pxy[i, j])
 
@@ -252,9 +250,9 @@ end
   end 
 
   # add source wavelet
-  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + ricker_wavelet(n * dt - 0.1)  
+  vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + dt / ρ * ricker_wavelet(n * dt - 0.1)  
 
-  heatmap(vy[:, :],framestyle = :box, clim=(-clip, clip), aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
+  heatmap(vy[:, :],framestyle = :box, aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
   
   # micro_data[n] = vx[Nx ÷ 2, Ny ÷ 2]
 end every 10
