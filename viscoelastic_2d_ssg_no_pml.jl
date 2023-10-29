@@ -158,7 +158,7 @@ Ny_end = Ny - M
   # add source wavelet
   vy[Nx ÷ 2, Ny ÷ 2] = vy[Nx ÷ 2, Ny ÷ 2] + dt / ρ * ricker_wavelet(n * dt - 0.1)  
 
-  heatmap(vy[:, :],framestyle = :box, aspect_ratio = :equal, xlabel = "X", ylabel = "Y", title = "Wave Propagation", color = :seismic, size = (900, 900))
+  heatmap(vy[:, :], framestyle = :box, aspect_ratio = :equal, xlabel = "Y", ylabel = "X", title = "Wave Propagation", color = :seismic, size = (900, 900), clim=(-dt / ρ, dt / ρ))
   
 end every 10
 
